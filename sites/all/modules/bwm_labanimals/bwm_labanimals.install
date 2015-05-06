@@ -1,0 +1,71 @@
+<?php
+
+/**
+ * Implementation of hook_install()
+ */
+function bwm_labanimals_install() {
+  drupal_install_schema('bwm_labanimals');
+  db_query('DELETE FROM {cache}');
+  db_query('INSERT INTO bwm_labanimals_categories SET category="Environmental Enrichment for Primates", shortname="enrich"');
+  db_query('INSERT INTO bwm_labanimals_categories SET category="Database on Refinement of Housing and Handling Conditions and Environmental Enrichment for Animals Kept in Laboratories", shortname="refine"');
+  db_query("ALTER TABLE bwm_labanimals_summaries CHARACTER SET utf8 COLLATE utf8_unicode_ci");
+}
+
+/**
+ * Implementation of hook_uninstall()
+ */
+function bwm_labanimals_uninstall() {
+  drupal_uninstall_schema('bwm_labanimals');
+}
+
+/**
+ * Implementation of hook_schema()
+ * @return array of Schema API table definitions.
+ */
+function bwm_labanimals_schema() {
+  $schema['bwm_labanimals_categories'] = array(
+    'fields' => array(
+      'id' => array('type' => 'serial', 'not null' => TRUE, 'description' => "Primary identifier"),
+      'category' => array('type' => 'text', 'not null' => TRUE, 'description' => "Database category"),
+      'shortname' => array('type' => 'text', 'not null' => TRUE, 'description' => "Shorthand category name"),
+      'lastmod' => array('mysql_type' => 'DATETIME', 'not null' => TRUE, 'description' => "Last time this category had a record touched"),
+    ),
+    'primary key' => array('id'),
+  );
+  $schema['bwm_labanimals_summaries'] = array(
+    'fields' => array(
+      'id' => array('type' => 'serial', 'not null' => TRUE, 'description' => "Primary identifier"),
+      'citation' => array('type' => 'text', 'not null' => TRUE, 'description' => "Citation of Paper"),
+      'url' => array('type' => 'text', 'not null' => FALSE, 'description' => "Published URL"),
+      'abstract' => array('type' => 'text', 'not null' => FALSE, 'description' => "Abstract of Paper"),
+      'category' => array('type' => 'int', 'not null' => TRUE, 'description' => "Category Identifier (Foreign Key)"),
+    ),
+    'primary key' => array('id'),
+    // XXX foreign keys don't appear to really be foreign keys; cascade does
+    // nothing, though for this application that's all but irrelevant
+    'foreign keys' => array(
+      'category' => array(
+        'table' => 'bwm_labanimals_categories',
+        'columns' => array('category' => 'id'),
+      ),
+    ),
+  );
+  $schema['bwm_labanimals_keywords'] = array(
+    'fields' => array(
+      'id' => array('type' => 'serial', 'not null' => TRUE, 'description' => "Primary identifier"),
+      'keyword_combo' => array('type' => 'text', 'not null' => TRUE, 'description' => "Keyword phrase"),
+      'summary' => array('type' => 'int', 'not null' => TRUE, 'description' => "Summary Identifier (Foreign Key)"),
+    ),
+    'primary key' => array('id'),
+    // XXX foreign keys don't appear to really be foreign keys; cascade does
+    // nothing, though for this application that's all but irrelevant
+    'foreign keys' => array(
+      'summary' => array(
+        'table' => 'bwm_labanimals_summaries',
+        'columns' => array('summary' => 'id'),
+	'on delete' => 'cascade',
+      ),
+    ),
+  );
+  return $schema;
+}

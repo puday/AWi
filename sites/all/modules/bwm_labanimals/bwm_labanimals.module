@@ -1,0 +1,714 @@
+<?php
+
+# Map some category shortnames to "real" category names.  This is mainly a
+# mechanism to alias some names to encompass multiple categories.
+global $labanimals_category_map;
+$labanimals_category_map = Array("laball" => Array("enrich", "refine"));
+
+/**
+* Valid permissions for this module
+* @return array An array of valid permissions for the bwm_labanimals module
+*/
+function bwm_labanimals_perm() {
+  return array('manage lab animals databases', 'access lab animals databases');
+} // function bwm_labanimals_perm()
+
+/**
+ * Implementation of hook_block().
+ * @param string $op one of "list", "view", "save" and "configure"
+ * @param integer $delta code to identify the block
+ * @param array $edit only for "save" operation
+ */
+function bwm_labanimals_block($op = 'list', $delta = 0, $edit = array()) {  
+
+
+  switch ($op){
+    case "list":
+      $categories =  db_query("SELECT id,category,shortname FROM bwm_labanimals_categories");
+      $count = 0;
+      while($cat = db_fetch_object($categories)) {
+	$block[$count]["info"] = t($cat->category);
+	$count++;
+      }
+      break;
+    case "view":
+      $count = 0;
+      $block['subject'] = "Search";
+      $result = db_query("SELECT id,shortname,category FROM bwm_labanimals_categories ORDER BY id");
+      while($category = db_fetch_object($result)) {
+	if($count == $delta){
+	  $block['content'] = bwm_labanimals_content($category->shortname, $argument = null);
+	  break;
+	}
+	$count++;
+      }
+
+      break;
+    case "save":
+      break;
+    case "configure":
+      break;
+  }
+
+  return $block;
+} // function bwm_labanimals_block
+
+
+function _print_result_block($shortname, $summary_obj, $class=""){
+  $block = "<hr>";
+  $block .= "<div class='$class'>";
+  // strip out escape sequences on quotation marks
+  $citation = preg_replace('/\\\\(["\'])/', '${1}', $summary_obj->citation);
+  $block .= "<table>";
+  $block .= "<tr>";
+  $block .= "<td><strong>CIT:</strong></td><td> ".$citation."</td>";
+  $block .= "</tr>";
+  if(!empty($summary_obj->url)){
+    $block .= "<tr>";
+    $block .= "<td><strong>URL:</strong></td><td><a href='".$summary_obj->url."' target='_blank'>".$summary_obj->url."</a></td>";
+    $block .= "</tr>";
+  }
+  $block .= "<tr>";
+  // strip out escape sequences on quotation marks
+  $abstract = preg_replace('/\\\\(["\'])/', '${1}', $summary_obj->abstract);
+  $block .= "<td><strong>ANN:</strong></td><td>".$abstract."</td>";
+  $block .= "</tr>";
+  
+  $keywords = db_query("SELECT DISTINCT id,keyword_combo FROM bwm_labanimals_keywords WHERE summary='".$summary_obj->id."'");
+  $block .= "<tr>";
+  $block .= "<td><strong>KEY:</strong></td>";
+  $block .= "<td>";
+  while($key = db_fetch_object($keywords)) {
+    $keycount = db_result(db_query("SELECT COUNT(id) FROM bwm_labanimals_keywords WHERE keyword_combo='".$key->keyword_combo."'"));
+    // we basically double-encode ampersands so Drupal won't eat them
+    $phrases = preg_replace("/&/", '%26', $key->keyword_combo);
+    $block .= "<a href='/labanimals/$shortname/".urlencode($phrases)."'>";
+    $block .= $key->keyword_combo." [$keycount]</a><br />";
+  }
+  $block .= "</td>";
+  $block .= "</tr>";
+  $block .= "</table>";
+  $block .= "</div>";
+  return $block;
+}
+
+function _print_pager_block($page, $per_page, $count){
+  $content = "<script>bwm_labanimals_last_page = $page;</script>";
+  $up_to = $per_page;
+  if($count < $per_page) $up_to = $count;
+  $content .= "<p>Displaying <span class='bwm_labanimals_result_start'>1</span> - <span class='bwm_labanimals_result_end'>$up_to</span></strong></p>";
+  $content .= "<p class='labanimals-pager'>";
+  $content .= "<a onclick='switchLabanimalsPage(\"prev\");' class='bwm_labanimals_res_prev' style='visibility:hidden;'>&lt; prev</a> ";
+  if($page > 1){
+    for ($p = 1; $p <= $page; $p++){
+      $class = "bwm_labanimals_pager_link bwm_labanimals_pager_$p";
+      if($p == 1) $class .= " labanimals-pager-current";
+      $content .= "<a onclick='switchLabanimalsPage($p);' id='bwm_labanimals_pager_$p' class='$class'>$p</a> ";
+    }
+  }
+  $content .= "<a onclick='switchLabanimalsPage(\"next\");' class='bwm_labanimals_res_next'>";
+  if($page > 1) $content .= "next &gt;";
+  $content .= "</a>";
+  $content .= "</p>";
+
+  return $content;
+}
+
+function _print_results($shortname, $result){
+  $per_page = 30;
+
+  $content = '<script>
+    var bwm_labanimals_page_current = 1;
+    var bwm_labanimals_last_page = 1;
+    function switchLabanimalsPage(page){
+      if(page == "next"){
+	page = bwm_labanimals_page_current+1;
+      }
+      else if(page == "prev"){
+	page = bwm_labanimals_page_current-1;
+      }
+
+      $(".bwm_labanimals_result_page").hide();
+      $(".bwm_labanimals_pager_link").removeClass("labanimals-pager-current");
+      $(".bwm_labanimals_res_prev").css("visibility", "hidden");
+      $(".bwm_labanimals_res_next").css("visibility", "hidden");
+      $("#bwm_labanimals_result_page_"+page).show();
+      $(".bwm_labanimals_pager_"+page).addClass("labanimals-pager-current");
+      bwm_labanimals_page_current = page;
+      if(page > 1){
+        $(".bwm_labanimals_res_prev").css("visibility", "visible");
+      }
+      if(page < bwm_labanimals_last_page){
+        $(".bwm_labanimals_res_next").css("visibility", "visible");
+      }
+      $(".bwm_labanimals_result_start").text((page*'.$per_page.') - ('.$per_page.' - 1));
+      $(".bwm_labanimals_result_end").text(page*'.$per_page.');
+    }
+    </script>';
+
+  $page = 1;
+  $count = 0;
+  $hits .= "<div id='bwm_labanimals_result_page_1' class='bwm_labanimals_result_page'>";
+  while($summ = db_fetch_object($result)) {
+    $count++;
+    if($count % $per_page == 0){
+      $page++;
+      $hits .= "</div>";
+      $class = "bwm_labanimals_result_page";
+      $hits .= "<div id='bwm_labanimals_result_page_$page' class='$class' style='display:none;'>";
+    }
+//    $hits .= "<br />$count<br />";
+    if($count % 2 == 0) $hits .= _print_result_block($shortname, $summ, "labanimals-result-even");
+    else $hits .= _print_result_block($shortname, $summ, "labanimals-result-odd"); 
+    
+  }
+  $hits .= "</div>";
+
+  $content .= "<p><strong>$count results found</strong></p>";
+  if($count > 0){
+    $content .= _print_pager_block($page, $per_page, $count);
+    $content .= "<br />";
+    $content .= $hits;
+    $content .= "<p>";
+    $content .= "<br />";
+    $content .= _print_pager_block($page, $per_page, $count);
+    $content .= "</p>";
+    $content .= "<br />";
+  }
+  return $content;
+}
+
+function bwm_labanimals_content($shortname = null, $argument = null) {
+  global $labanimals_category_map;
+  $cat_id_where = null;
+  $cat_name = null;
+
+  $page = 1;
+  if($argument){
+    if(is_numeric($argument)){
+      $page = $argument;
+    }
+    else{
+      $keyword_combo = $argument;
+    }
+  }
+
+  db_query("SET character_set_results=utf8");
+  db_query("SET NAMES 'utf8'");
+  db_query("SET CHARACTER SET utf8");
+  mb_language('uni');
+  mb_internal_encoding('UTF-8');
+
+
+  if(!empty($shortname)){
+    $cat_where = "shortname='".db_escape_field($shortname)."'";
+    if(array_key_exists($shortname, $labanimals_category_map)){
+      $cat_where = "";
+      if(is_array($labanimals_category_map[$shortname])){
+	foreach ($labanimals_category_map[$shortname] as $cat_name){
+	  if(!empty($cat_where)) $cat_where .= " OR ";
+	  $cat_where .= "shortname='$cat_name'";
+	}
+      }
+      else{
+	$cat_where = "shortname='".$labanimals_category_map[$shortname]."'";
+      }
+    }
+    $shortname_safe = db_escape_field($shortname);
+    $result =  db_query("SELECT id,category,lastmod FROM bwm_labanimals_categories WHERE $cat_where");
+    $count = 0;
+    $cat_name = "";
+    $cat_id_where = "";
+    $cat_lastmod = "";
+   foreach($result as $cat) {
+      if(!empty($cat_id_where)) $cat_id_where .= " OR ";
+      $cat_id_where .= "category=$cat->id";
+      if(!empty($cat_name)) $cat_name .= " &</br> ";
+      $cat_name .= $cat->category;
+      $cat_lastmod = $cat->lastmod;
+      $count++;
+    }
+    // Reformat date string to match regular search results per Brittany
+    if(!empty($cat_lastmod)){
+      list($y, $m, $d) = preg_split("/\-/", preg_replace("/ .*/", "", $cat_lastmod));
+      $cat_lastmod = date("F j, Y", mktime(0, 0, 0, $m, $d, $y));
+    }
+    if($count < 1){
+      drupal_set_message(t("Could not identify category '$shortname' (found $count matching categories from $cat_where)"), 'error');
+      return "";
+    }
+  }
+
+
+  $content = "";
+
+// XXX use db_escape_field on all this
+  // If someone queried a keyword set directly (as part of the url), pull all
+  // matching records.
+  if(!empty($keyword_combo)){
+    drupal_set_title($cat_name);
+    drupal_set_breadcrumb(array());
+
+    $result =  db_query("SELECT s.id,s.citation,s.url,s.abstract FROM bwm_labanimals_summaries AS s INNER JOIN bwm_labanimals_keywords AS k ON (s.id=k.summary AND k.keyword_combo='$keyword_combo')");
+    $content .= _print_results($shortname, $result);
+  }
+  else if(isset($_POST['searchterms']) && isset($_POST['searchtype']) && isset($_POST['searchlogic'])){
+    drupal_set_title($cat_name);
+    drupal_set_breadcrumb(array());
+    $terms = preg_split("/\s+/", $_POST['searchterms']);
+
+    // we're building queries with this string, and the keyword version
+    // involves an inner join with the alias "k."
+    $searchtype = db_escape_field($_POST['searchtype']);
+    if($searchtype == "keyword_combo") $searchtype = "k.keyword_combo";
+
+    if($_POST['searchlogic'] == "browse"){
+      $cat_id_join_where = preg_replace("/category=/", "s.category=", $cat_id_where);
+      $result =  db_query("SELECT DISTINCT k.keyword_combo FROM bwm_labanimals_summaries AS s INNER JOIN bwm_labanimals_keywords AS k ON (k.summary=s.id AND $cat_id_join_where) ORDER BY k.keyword_combo ASC");
+      $content .= "<table class='labanimals-browse'>";
+      while($key = db_fetch_object($result)) {
+        $content .= "<tr>";
+        $content .= "<td>";
+        $keycount = db_result(db_query("SELECT COUNT(id) FROM bwm_labanimals_keywords WHERE keyword_combo='".$key->keyword_combo."'"));
+        // we basically double-encode ampersands so Drupal won't eat them
+        $phrases = preg_replace("/&/", '%26', $key->keyword_combo);
+        $content .= "<a href='/labanimals/$shortname/".urlencode($phrases)."'>";
+        $content .= $key->keyword_combo." [$keycount]</a><br />";
+        $content .= "</td>";
+        $content .= "</tr>";
+      }
+      $content .= "</table>";
+//      $content .= _print_results($shortname, $result);
+    }
+    else if($_POST['searchlogic'] == "and" || $_POST['searchlogic'] == "or" || $_POST['searchlogic'] == "begin"){
+      if($_POST['searchlogic'] == "begin"){
+	foreach ($terms as &$term){
+	  if($searchtype == "abstract"){
+	    $term = " $searchtype LIKE '$term%' OR $searchtype LIKE '\"$term%' OR $searchtype LIKE '_\"$term%' ";
+	  }
+	  else $term = " $searchtype LIKE '$term%' ";
+	}
+	$where = implode(" OR ", $terms);
+      }
+      else{
+	foreach ($terms as &$term) $term = " $searchtype LIKE '%%$term%' ";
+	$where = implode(" ".$_POST['searchlogic']." ", $terms);
+      }
+
+      if($_POST['searchtype'] == "keyword_combo"){
+	$result =  db_query("SELECT DISTINCT s.id,s.citation,s.url,s.abstract FROM bwm_labanimals_summaries AS s INNER JOIN bwm_labanimals_keywords AS k ON (s.id=k.summary AND ($where))");
+      drupal_set_message(t(")"), 'error');
+      }
+      else{
+	$result = db_query("SELECT id,citation,url,abstract FROM bwm_labanimals_summaries WHERE $where AND ($cat_id_where)");
+      }
+      $content .= _print_results($shortname, $result);
+    }
+  }
+  else{
+    $content .= "<form method='POST' action='/labanimals/$shortname' accept-charset='UTF-8'>";
+    $content .= "<p><input type='text' name='searchterms' size='45' maxlength='256'>";
+    $content .= "<select name='searchtype'>";
+    $content .= "<option value='citation'>Citation";
+    $content .= "<option value='abstract'>Abstract";
+    $content .= "<option value='keyword_combo'>Keywords";
+    $content .= "</select></p>";
+    $content .= "<input type='radio' name='searchlogic' value='or'> Any word (OR)<br />";
+    $content .= "<input type='radio' name='searchlogic' value='and' CHECKED> All words (AND)<br />";
+    $content .= "<input type='radio' name='searchlogic' value='begin'> Begins with any of<br />";
+    $content .= "<input type='radio' name='searchlogic' value='browse'> Browse the index<br />";
+    $content .= "<input type='submit' name='Execute Search'>";
+    $content .= "</form>";
+    $content .= "<br /><p><em>";
+    $content .= "Information Last Updated On: $cat_lastmod";
+    $content .= "</em></p>";
+  }
+
+  return $content;
+}
+
+function bwm_labanimals_menu() {
+
+  $items = array();
+
+/* XXX figure out how to make a containing page with tabs
+  $items['admin/settings/bwm_labanimals'] = array(
+    'title' => 'BWM Lab Animals Databases',
+    'description' => 'BWM Lab Animals Databases',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array(),
+    'access arguments' => array('manage lab animals databases'),
+    'type' => MENU_NORMAL_ITEM
+  );
+  */
+  $items['admin/settings/bwm_labanimals/categories'] = array(
+//    'title' => 'Categories',
+    'title' => 'BWM Lab Animals Categories',
+    'description' => 'BWM Lab Animals Database Categories',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('bwm_labanimals_categories'),
+    'access arguments' => array('manage lab animals databases'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $result =  db_query("SELECT id,category,shortname FROM bwm_labanimals_categories");
+  foreach ($result as $cat) {
+    $items['admin/settings/bwm_labanimals/categories/admin/settings/bwm_labanimals/'.$cat->shortname] = array(
+      'title' => "BWM Lab Animals '".$cat->shortname."' Updates",
+      'description' => $cat->category,
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('bwm_labanimals_uploads_'.$cat->shortname),
+      'access arguments' => array('manage lab animals databases'),
+      'type' => MENU_NORMAL_ITEM,
+    );
+  }
+  
+
+  $items['labanimals'] = array(
+    'title' => 'Lab Animals',
+    'description' => 'Lab Animals',
+    'page arguments' => array(),
+    'page callback' => 'bwm_labanimals_content',
+    'access arguments' => array('access lab animals databases'),
+    'type' => MENU_CALLBACK,
+  );
+
+
+  return $items;
+}
+
+function bwm_labanimals_forms($form_id, $args){
+  $forms = Array();
+
+  if (0 !== strpos($form_id, 'bwm_labanimals_')) {return $forms;}
+  
+  $forms[$form_id] = Array(
+    'callback' => 'bwm_labanimals_form_builder',
+    'callback arguments' => array($form_id, $args,)
+  );
+
+  return $forms;
+}
+
+
+function bwm_labanimals_form_builder( $form_id, $args) {
+  $form = array();
+  $form['#attributes'] = array('enctype' => "multipart/form-data");
+
+  if(preg_match("/^bwm_labanimals_uploads_([^_]+)$/", $args['build_info']['form_id'], $matches)){
+    $shortname = $matches[1];
+    $category =  db_query("SELECT category FROM bwm_labanimals_categories WHERE shortname='$shortname'")->fetchField();
+    $id =  db_query("SELECT id FROM bwm_labanimals_categories WHERE shortname='$shortname'")->fetchField();
+    if(!$id){
+      drupal_set_message(t("Could not identify category '$shortname'"), 'error');
+      return $form;
+    }
+
+    $form[$args['build_info']['form_id']] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Update '.$category),
+      '#tree' => TRUE,
+    );
+
+    $form[$args['build_info']['form_id']]["file"] = array(
+      '#type' => 'file',
+      '#description' => t("Database file to upload for category '".$shortname."'"),
+    );
+    $form[$args['build_info']['form_id']]["id"] = array(
+      '#type' => 'value',
+      '#value' => $id,
+    );
+    $form[$args['build_info']['form_id']]["submit"] = array(
+      '#type' => 'submit',
+      '#value' => t('Submit'),
+    );
+    $form['#validate'][] = 'bwm_labanimals_uploads_validate';
+    $form['#submit'][] = 'bwm_labanimals_uploads_submit';
+  }
+
+  return($form);
+}
+
+
+function bwm_labanimals_categories() {
+  $form = array();
+
+  $form['bwm_labanimals_categories'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Categories'),
+    '#tree' => TRUE,
+  );
+
+  $result =  db_query("SELECT id,category,shortname FROM bwm_labanimals_categories");
+  foreach ($result as $cat) {
+    $form['bwm_labanimals_categories'][$cat->shortname] = array(
+      '#type' => 'fieldset',
+      '#title' => t($cat->category),
+      '#collapsible' => TRUE,
+      '#collapsed' => TRUE,
+    );
+    $form['bwm_labanimals_categories'][$cat->shortname]["category"] = array(
+      '#type' => 'textfield',
+      '#default_value' => variable_get('category', $cat->category),
+      '#maxlength' => 250,
+      '#size' => 70,
+      '#description' => t("Full category name"),
+      '#required' => TRUE,
+    );
+    $form['bwm_labanimals_categories'][$cat->shortname]["shortname"] = array(
+      '#type' => 'textfield',
+      '#default_value' => variable_get('shortname', $cat->shortname),
+      '#size' => 10,
+      '#maxlength' => 250,
+      '#description' => t("Shorthand name, for URLs; this category currently appears at <a href='/labanimals/$cat->shortname'>/labanimals/$cat->shortname</a>"),
+      '#required' => TRUE,
+    );
+    $form['bwm_labanimals_categories'][$cat->shortname]["deleteme"] = array(
+      '#type' => 'checkbox',
+      '#title' => t("Delete this category"),
+      '#description' => t("USE CAUTION: Deleting this category will effectively remove all database entries associated with it!"),
+      '#required' => FALSE,
+    );
+    $form['bwm_labanimals_categories'][$cat->shortname]["id"] = array(
+      '#type' => 'value',
+      '#value' => $cat->id,
+    );
+  }
+
+  $form['bwm_labanimals_categories']['_new'] = array(
+    '#type' => 'fieldset',
+    '#title' => t("Add a new category"),
+    '#collapsible' => TRUE,
+  );
+  $form['bwm_labanimals_categories']['_new']["category"] = array(
+    '#type' => 'textfield',
+    '#maxlength' => 250,
+    '#size' => 70,
+    '#description' => t("Full category name"),
+    '#required' => FALSE,
+    '#default_value' => ""
+  );
+  $form['bwm_labanimals_categories']['_new']["shortname"] = array(
+    '#type' => 'textfield',
+    '#size' => 10,
+    '#maxlength' => 250,
+    '#description' => t("Shorthand name (appears in links)"),
+    '#required' => FALSE,
+    '#default_value' => ""
+  );
+
+  $form['#submit'][] = 'bwm_labanimals_categories_submit';
+
+  return system_settings_form($form);
+}
+
+
+function bwm_labanimals_categories_validate($form, &$form_state) {
+  foreach ($form_state['values']['bwm_labanimals_categories'] as $key => $values){
+    if(!empty($values['deleteme'])) continue;
+    if(!empty($values['shortname']) || !empty($values['category']) || !empty($values['id']) ){
+      if(empty($values['category'])){
+        form_set_error('bwm_labanimals_categories]['.$key.'][category', t("Category full name must be supplied"));
+      }
+
+      if(empty($values['shortname'])){
+        form_set_error('bwm_labanimals_categories]['.$key.'][shortname', t("Category shorthand name must be supplied"));
+      }
+      else{
+	if(!preg_match('/^[a-z0-9\\_\\-]+$/i', $values['shortname'])){
+	  form_set_error('bwm_labanimals_categories]['.$key.'][shortname', t("Category shorthand names can only contain letters, numbers, dashes, and underscores"));
+	}
+	else if($key != $values['shortname']){ 
+	  $shortname_safe = db_escape_field($values['shortname']);
+	  $namecheck = db_query("SELECT category FROM bwm_labanimals_categories WHERE shortname='$shortname_safe'")->fetchObject();
+	  //$existing = db_result($namecheck);
+	  if($namecheck){
+	    form_set_error('bwm_labanimals_categories]['.$key.'][shortname', t("Category short name '".$values['shortname']."' is in use for '".$namecheck."'"));
+	  }
+	}
+      }
+
+    }
+
+    if($values['shortname'] == "_new"){
+      form_set_error('bwm_labanimals_categories]['.$key.'][shortname', t('Category short name "_new" is reserved.'));
+    }
+ 
+  }
+
+}
+
+function bwm_labanimals_categories_submit($form, &$form_state) {
+
+  $result = db_query("SELECT id,shortname,category FROM bwm_labanimals_categories");
+  $existing = Array();
+  foreach ($result as $cat) {
+    $existing[$cat->id]['shortname'] = $cat->shortname;
+    $existing[$cat->id]['category'] = $cat->category;
+  }
+  
+  foreach ($form_state['values']['bwm_labanimals_categories'] as $key => $values){
+    $id = db_escape_field(isset($values['id']) ? $values['id'] : '');
+    if(!empty($existing[$id])){
+      if($values['deleteme']){
+	db_query("DELETE FROM bwm_labanimals_categories WHERE id='$id'");
+      }
+      else if($existing[$id]['shortname'] != $values['shortname'] || $existing[$id]['category'] != $values['category']){
+	db_query("UPDATE bwm_labanimals_categories SET shortname='".db_escape_field($values['shortname'])."', category='".db_escape_field($values['category'])."' WHERE id='$id'");
+      }
+    }
+    else if(empty($id) && $key == "_new" && !empty($values['shortname'])){
+      db_query("INSERT INTO bwm_labanimals_categories SET shortname='".db_escape_field($values['shortname'])."', category='".db_escape_field($values['category'])."'");
+    }
+
+  }
+}
+
+function bwm_labanimals_uploads_validate($form, &$form_state) {
+  $formname = $form['#parameters'][0];
+
+  $id = db_escape_field($form_state['values'][$formname]['id']);
+  $category =  db_result(db_query("SELECT category FROM bwm_labanimals_categories WHERE id='$id'"));
+  if(!$category){
+    form_set_error('', t('Unable to determine category from id '.$id));
+  }
+
+  if(empty($_FILES['files']['name'][$formname])){
+    form_set_error("$formname][file", t('No file specified for upload'));
+  }
+}
+
+function _bwm_labanimals_insert_article($citation, $abstract, $url, $phrases, $cat_id){
+
+  db_query("SET character_set_results=utf8");
+  db_query("SET NAMES 'utf8'");
+  db_query("SET CHARACTER SET utf8");
+  mb_language('uni');
+  mb_internal_encoding('UTF-8');
+
+  $summary_data = Array(
+    'citation' => db_escape_field($citation),
+    'url' => db_escape_field($url),
+    'abstract' => db_escape_field($abstract),
+    'category' => $cat_id
+  );
+//  $summ_check = "SELECT COUNT(id) FROM bwm_labanimals_summaries WHERE citation='$citation' AND category='$cat_id'";
+/*  $count = db_result(db_query($summ_check));
+  if($count > 0){
+    # we already have this citation, quietly skip so we don't duplicate
+    return false;
+  }
+  else{
+//    drupal_set_message(t("Adding new citation $citation"), 'status');
+// this is too noisy, since we overwrite the whole DB each time
+  }
+  */
+
+  if(!drupal_write_record('bwm_labanimals_summaries', $summary_data)){
+    drupal_set_message(t("Error in drupal_write_record for $citation"), 'error');
+    return false;
+  }
+  if(!$summary_data['id']){
+    drupal_set_message(t("Didn't get an id back from the insert of $citation"), 'error');
+    return false;
+  }
+  if($phrases){
+    foreach ($phrases as $keyphrase){
+      $phrase_data = Array(
+	'keyword_combo' => db_escape_field($keyphrase),
+	'summary' => $summary_data['id']
+      );
+      drupal_write_record('bwm_labanimals_keywords', $phrase_data);
+    }
+  }
+  return true;
+}
+
+function bwm_labanimals_uploads_submit($form, &$form_state) {
+  $formname = $form['#parameters'][0];
+
+  if(empty($_FILES['files']['tmp_name'][$formname])){
+    drupal_set_message(t("tmp_name wasn't set on uploaded file, perhaps PHP's upload_max_filesize is too small?"), 'error');
+    return;
+  }
+
+  $category = null;
+  foreach ($form_state['values'] as $key => $values){
+    if(!empty($values['id'])){
+      $category = $values['id'];
+      break;
+    }
+  }
+
+  $db_lines = file($_FILES['files']['tmp_name'][$formname]);
+  if(!$db_lines){
+    $err = error_get_last();
+    drupal_set_message(t("Error reading ".$_FILES['files']['tmp_name'][$formname].": ".$err['message']), 'error');
+    return;
+  }
+
+  $result = db_query("SELECT id FROM bwm_labanimals_summaries WHERE category='$category'");
+  while($summ = db_fetch_object($result)) {
+    db_query("DELETE FROM bwm_labanimals_keywords WHERE summary='$summ->id'");
+    db_query("DELETE FROM bwm_labanimals_summaries WHERE id='$summ->id'");
+  }
+
+  list($citation, $abstract, $url, $phrases) = Array(null, null, null, null);
+  $on = null;
+  $line_c = 0;
+  $added = 0;
+  foreach ($db_lines as &$line){
+    $line = rtrim($line);
+    if(preg_match("/^FIELD03:\s*/", $line)){
+      # commit the last one we were reading before starting another
+      if($citation){ 
+	if(_bwm_labanimals_insert_article($citation, $abstract, $url, $phrases, $category)){
+	  $added++;
+	}
+      }
+      list($citation, $abstract, $url, $phrases) = Array(null, null, null, null);
+
+      $citation = preg_replace("/^FIELD\d+:\s*/", "", $line);
+      $on = "citation";
+    }
+    else if(preg_match("/^FIELD05:\s*/", $line)){
+      $on = "url";
+      $url = preg_replace("/^FIELD\d+:\s*/", "", $line);
+    }
+    else if(preg_match("/^FIELD43:\s*/", $line)){
+      $on = "abstract";
+      $abstract = preg_replace("/^FIELD\d+:\s*/", "", $line);
+      $abstract = preg_replace("/(^\"|\"$)/", "", $abstract);
+    }
+    else if(preg_match("/^FIELD45:\s*/", $line)){
+      $on = null;
+      $phrases = preg_split("/\s*;\s*/", preg_replace("/^FIELD\d+:\s*/", "", $line));
+    }
+    else{
+      switch ($on) {
+	case "citation":
+	  $citation .= $line;
+	  break;
+	case "abstract":
+	  $abstract .= $line;
+	  break;
+	case "url":
+	  $url .= $line;
+	  break;
+        default:
+	  form_set_error("$formname][file", t("Warning: Couldn't properly parse line $line_c: '$line'"));
+	  break;
+      }
+    }
+    $line_c++;
+  }
+  if($added == 0){
+    drupal_set_message(t("No new citations in this batch, nothing changed"), 'status');
+  }
+  else{
+    drupal_set_message(t("Uploaded $added citation(s)"), 'status');
+    db_query("UPDATE bwm_labanimals_categories SET lastmod=NOW() WHERE id='$category'");
+  }
+
+
+}
