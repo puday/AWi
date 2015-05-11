@@ -1,0 +1,60 @@
+<?php
+// $Id: bluewatermedia.module,v 1.1.2.25.2.1.2.35 2010/09/13 02:36:49 ronan Exp $
+
+
+/**
+ * @file
+ * Create (manually or scheduled) and restore backups of your Drupal MySQL
+ * database with an option to exclude table data (e.g. cache_*)
+ */
+
+/* Drupal Hooks */
+
+function bluewatermedia_nodeapi (&$node, $op, $a3 = NULL, $a4  = NULL){
+  if ($op == 'view') {
+    switch($node->type) {
+      case 'product':
+        $content = node_load ($node->nid);
+        if (isset($content->taxonomy[0])) {
+          $tid = $content->taxonomy[0]["tid"];
+          $path = drupal_get_normal_path("taxonomy/term/" . $tid);
+          $menu_item = menu_get_item($path);
+          if($path && $menu_item) {
+            #menu_set_item(NULL, $menu_item);
+          }
+        }
+        break;
+      case 'article':
+        $content = node_load ($node->nid);
+          #watchdog ("custom-mod", "tax-" . print_r(count($content->taxonomy), true));
+        
+        if (is_array($content->taxonomy) && count($content->taxonomy) >= 2) {
+          $taxonomy = end($content->taxonomy);
+          $tid = $taxonomy->tid;
+          #watchdog ("custom-mod", "tid-" . $tid);
+          $path = drupal_get_normal_path("taxonomy/term/" . $tid);
+          #watchdog ("custom-mod", "path-" . $path);
+          $menu_item = menu_get_item($path);
+          #watchdog ("custom-mod", print_r($menu_item, true));
+          
+          if($path && $menu_item) {
+            menu_set_item(NULL, $menu_item);
+          }
+        }
+      
+        break;
+    }
+  
+    #watchdog ("custom-mod", print_r($content, true));
+    
+  }
+}
+
+
+/* Menu Callbacks */
+
+
+
+/* Helper Functions */
+
+

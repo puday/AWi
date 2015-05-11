@@ -1,0 +1,66 @@
+@media only screen and (min-width: 768px) {
+.left-col{
+	width:21%;
+	padding:25px 2% 0 2%;
+	float:left;
+}
+.right-col{
+	width:75%;
+}
+.top-menu {
+    float: right;
+    width: auto;
+}
+.top-menu ul{margin:0;}
+.top-menu li{
+	float:left;
+}
+.mobile-nav{display:none;}
+.menu{
+	background:none;
+	width:100%;
+	padding:23px 0 0 0;
+	float:left;
+	display:block;
+}
+.menu ul{text-align:right;}
+.menu li{
+	padding:0 17px;
+	display:inline;
+	font-size:15px;
+    font-family: 'proxima_nova_cn_ltsemibold';
+}
+.menu li a{color:#3F403F;}
+.logo{width:160px;}
+.logo img{width:100%;}
+.left-col p{
+	padding:0 2px 18px 2px;
+}
+.top-menu {
+	margin-top:20px;
+    margin-right: 10px;
+}
+.search{
+	width:290px;
+	margin:7px 0 0 37px;
+	float:left;
+}
+.top-menu li a {
+    padding: 0 8px;
+}
+.menu li {
+    padding: 0 4px;
+}
+.menu li:last-child {
+    padding-right: 10px;
+}
+.news{width:50%;}
+.img-block{width:37%; clear:none; padding:0 0 0 18px; float:left; border-left:1px dotted #969696;}
+.footer .left{
+	width:auto;
+}
+.footer .right{
+ width:auto;
+ float:right;
+}
+}

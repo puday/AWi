@@ -1,0 +1,4 @@
+name = Lab Animals Database
+description = Drupal-compatible implementation of AWI's Lab Animals executive summary database
+core = 7.x
+package = Blue Water Media

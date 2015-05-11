@@ -1,0 +1,14 @@
+@media only screen and (min-width: 480px) {
+.top-menu li a{
+	font-size:18px;
+	padding:0 14px;
+}
+.caption p{
+	font-size:16px;
+}
+.caption p span{
+	font-size:14px;
+	line-height:normal;
+}
+.footer .left li{padding-bottom:0;}
+}

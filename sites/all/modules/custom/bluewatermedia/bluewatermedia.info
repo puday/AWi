@@ -1,0 +1,12 @@
+; $Id: bluewatermedia.info,v 1.1.6.1 2008/09/02 16:07:51 ronan Exp $
+name = Blue Water Media
+description = "Custom module for various things (i.e. selecting active menu)."
+core = 6.x
+package = Blue Water Media
+
+; Information added by drupal.org packaging script on 2010-11-06
+version = "7.x-2.4"
+core = "7.x"
+project = "bluewatermedia"
+datestamp = "1289012136"
+
